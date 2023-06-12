@@ -21,6 +21,7 @@ HDL_FILES = \
 	../rtl/video${SYNC}/lspc_regs.v \
 	../rtl/video/lspc_regs.v \
 	../rtl/video${SYNC}/lspc_timer.v \
+	../rtl/video/lspc_timer.v \
 	../rtl/video${SYNC}/neo_273.v \
 	../rtl/video${SYNC}/neo_cmc.v \
 	../rtl/video${SYNC}/neo_zmc2.v \

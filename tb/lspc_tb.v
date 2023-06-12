@@ -26,6 +26,8 @@ module lspc_tb (
 	input VIDEO_MODE,
 
 	// CPU bus
+	output CLK_EN_68K_P,
+	output CLK_EN_68K_N,
 	input  FC0,
 	input  FC1,
 	input  FC2,
@@ -34,7 +36,7 @@ module lspc_tb (
 	input  nUDS,
 	input  nLDS,
 	input  [23:1] M68K_ADDR,
-	inout  [15:0] M68K_DATA,
+	input  [15:0] M68K_DATA,
 	output nHALT,
 	output IPL0,
 	output IPL1,
@@ -121,10 +123,21 @@ wire [15: 0] CPU_VRAM_ADDR;        // CPU access address
 wire [ 1: 0] VRAM_CYCLE;
 wire [ 7: 0] FIXD;
 
+wire A23Z, A22Z, nIO_ZONE, nLSPC_ZONE;
+wire nVEC = 0;
+
+assign {A23Z, A22Z} = M68K_ADDR[23:22] ^ {2{~|{M68K_ADDR[21:7], ^M68K_ADDR[23:22], nVEC}}};
+assign nIO_ZONE = |{A23Z, A22Z, ~M68K_ADDR[21], ~M68K_ADDR[20]};
+assign nLSPC_ZONE = |{nIO_ZONE, ~M68K_ADDR[19], ~M68K_ADDR[18], M68K_ADDR[17]};
+assign nLSPWE = M68K_RW | nUDS | nLSPC_ZONE;
+assign nLSPOE = ~M68K_RW | nUDS | nLSPC_ZONE;
+
 assign DOTA_GATED = SP_EN & DOTA;
 assign DOTB_GATED = SP_EN & DOTB;
 
 assign PBUS[23:16] = nPBUS_OUT_EN ? LO_ROM_DATA : 8'bzzzzzzzz;
+
+wire [15:0] LSPC_M68K_DATA = nLSPOE ? M68K_DATA : 16'hZZZZ;
 
 lspc2_a2_sync	LSPC_sync(
 //lspc2_a2	LSPC(
@@ -136,7 +149,7 @@ lspc2_a2_sync	LSPC_sync(
 	.nRESETP(nRESETP),
 	.LSPC_8M(CLK_8M), .LSPC_4M(CLK_4M),
 	.LSPC_EN_4M_P(), .LSPC_EN_4M_N(),
-	.M68K_ADDR(M68K_ADDR[3:1]), .M68K_DATA(M68K_DATA),
+	.M68K_ADDR(M68K_ADDR[3:1]), .M68K_DATA(LSPC_M68K_DATA),
 	.IPL0(IPL0), .IPL1(IPL1),
 	.LSPOE(nLSPOE), .LSPWE(nLSPWE),
 	.PBUS_OUT(PBUS[15:0]), .PBUS_IO(PBUS[23:16]),
@@ -177,9 +190,9 @@ lspc2_a2	LSPC(
 	.RESET(nRESET),
 	.nRESETP(),
 	.LSPC_8M(), .LSPC_4M(),
-	.M68K_ADDR(M68K_ADDR[3:1]), .M68K_DATA(M68K_DATA),
+	.M68K_ADDR(M68K_ADDR[3:1]), .M68K_DATA(LSPC_M68K_DATA),
 	.IPL0(), .IPL1(),
-	.LSPOE(), .LSPWE(),
+	.LSPOE(nLSPOE), .LSPWE(nLSPWE),
 	.PBUS_OUT(PBUS[15:0]), .PBUS_IO(PBUS[23:16]),
 	.nPBUS_OUT_EN(),
 	.DOTA(DOTA_GATED), .DOTB(DOTB_GATED),
@@ -209,7 +222,7 @@ lspc2_a2	LSPC(
 wire         CLK_12M, CLK_EN_12M, CLK_EN_12M_N, CLK_68KCLK, CLK_68KCLKB, CLK_6MB, CLK_1HB, CLK_EN_6MB, CLK_EN_1HB;
 
 clocks CLK(CLK_24M, nRESETP, , , , , );
-clocks_sync CLK_SYNC(CLK_48M, ~CLK_24M, CLK_24M, nRESETP, , CLK_12M, CLK_68KCLK, CLK_68KCLKB,,, CLK_6MB, CLK_1HB, CLK_EN_12M, CLK_EN_12M_N, CLK_EN_6MB, CLK_EN_1HB);
+clocks_sync CLK_SYNC(CLK_48M, ~CLK_24M, CLK_24M, nRESETP, , CLK_12M, CLK_68KCLK, CLK_68KCLKB, CLK_EN_68K_P, CLK_EN_68K_N, CLK_6MB, CLK_1HB, CLK_EN_12M, CLK_EN_12M_N, CLK_EN_6MB, CLK_EN_1HB);
 
 wire [19:0] C_LATCH;
 reg   [3:0] C_LATCH_EXT;

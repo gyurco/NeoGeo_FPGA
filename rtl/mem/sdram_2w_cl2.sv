@@ -402,8 +402,8 @@ always @(posedge clk) begin
 			if (next_port[1] != PORT_NONE) begin
 				sd_cmd <= CMD_ACTIVE;
 				SDRAM_A <= addr_next[1][22:10];
-				// 6*8MiB -> Banks 0,1,2,0,1,2
-				SDRAM_BA <= addr_next[1][25:23] > 3'd2 ? addr_next[1][24:23] + 1'd1 : addr_next[1][24:23];
+				// 6*8MiB -> Banks 0,1,2,2,0,1
+				SDRAM_BA <= addr_next[1][24:23] == 2'b11 ? 2'b10 : addr_next[1][24:23];
 			end
 			case (next_port[1])
 				PORT_REQ: port2_state <= port2_req;
@@ -453,7 +453,7 @@ always @(posedge clk) begin
 				endcase;
 			end
 			SDRAM_A <= { 3'b001, addr_latch[1][25:23] > 3'd2, addr_latch[1][9:1] };  // auto precharge
-			SDRAM_BA <= addr_latch[1][25:23] > 3'd2 ? addr_latch[1][24:23] + 1'd1 : addr_latch[1][24:23];
+			SDRAM_BA <= addr_latch[1][24:23] == 2'b11 ? 2'b10 : addr_latch[1][24:23];
 		end
 
 		if(t == STATE_DS0b && oe_latch[0] && !we_next[1]) { SDRAM_DQMH, SDRAM_DQML } <= 0;

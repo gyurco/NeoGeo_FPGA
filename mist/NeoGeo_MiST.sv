@@ -33,12 +33,13 @@ module NeoGeo_MiST(
 
 wire [6:0] core_mod;
 
-`define DEBUG 1
+//`define DEBUG 1
 
 localparam CONF_STR = {
 	"NEOGEO;;",
-	"F,ROM,Load BIOS;",
 	"F,NEO,Load Cart;",
+	"F,NEO,Load Cart (skip ADPCM);",
+	"F,ROM,Load BIOS;",
 	"S0U,SAV,Load Memory Card;",
 	"TG,Save Memory Card;",
 	"O1,System Type,Console(AES),Arcade(MVS);",
@@ -285,12 +286,13 @@ function [5:0] ceil_bit;
 endfunction
 
 // Cart download control
-wire        system_rom_write = ioctl_downl && (ioctl_index == 0 || ioctl_index == 1);
-wire        cart_rom_write = ioctl_downl && ioctl_index == 2;
+wire        system_rom_write = ioctl_downl && (ioctl_index == 0 || ioctl_index == 3);
+wire        cart_rom_no_adpcm = ioctl_index == 2;
+wire        cart_rom_write = ioctl_downl && (ioctl_index == 1  || ioctl_index == 2);
 reg         port1_req, port1_ack;
 reg         port2_req, port2_ack;
 reg  [31:0] PSize, SSize, MSize, V1Size, V2Size, CSize;
-reg  [31:0] CMask, V1Mask, V2Mask;
+reg  [31:0] P2Mask, CMask, V1Mask, V2Mask;
 reg   [2:0] region;
 reg  [25:0] offset;
 reg  [25:0] region_size;
@@ -349,7 +351,7 @@ always @(posedge CLK_48M) begin
 				// ROM data
 				if (region <= 2)
 					port1_req <= ~port1_req;
-				else
+				else if (region <= 5 && (!cart_rom_no_adpcm || region != 3 || region != 4))
 					port2_req <= ~port2_req;
 				written <= 1;
 			end
@@ -376,6 +378,9 @@ always @(posedge CLK_48M) begin
 		CMask  <= (1<<ceil_bit(CSize)) - 1'd1;
 		V1Mask <= (1<<ceil_bit(V1Size)) - 1'd1;
 		V2Mask <= (1<<ceil_bit(V2Size)) - 1'd1;
+		P2Mask <= 0;
+		if (PSize > 32'h100000) P2Mask <= (1<<ceil_bit(PSize-32'h100000)) - 1'd1;
+		ADPCM_EN <= !cart_rom_no_adpcm;
 	end
 end
 
@@ -439,17 +444,18 @@ always @(posedge CLK_48M) begin
 end
 
 // ADPCM->SDRAM control
+reg        ADPCM_EN;
 reg [23:0] ADPCMA_ADDR_LATCH;
 reg [23:0] ADPCMB_ADDR_LATCH;
 always @(posedge CLK_48M) begin
 	reg ADPCMA_RD_OLD, ADPCMB_RD_OLD;
 	ADPCMA_RD_OLD <= ADPCMA_RD;
 	ADPCMB_RD_OLD <= ADPCMB_RD;
-	if (!ADPCMA_RD_OLD & ADPCMA_RD) begin
+	if (!ADPCMA_RD_OLD & ADPCMA_RD & ADPCM_EN) begin
 		if (ADPCMA_ADDR_LATCH[23:2] != {ADPCMA_BANK, ADPCMA_ADDR[19:2]}) sample_roma_req <= ~sample_roma_req;
 		ADPCMA_ADDR_LATCH <= {ADPCMA_BANK, ADPCMA_ADDR} & V1Mask;
 	end
-	if (!ADPCMB_RD_OLD & ADPCMB_RD) begin
+	if (!ADPCMB_RD_OLD & ADPCMB_RD & ADPCM_EN) begin
 		if (ADPCMB_ADDR_LATCH[23:2] != ADPCMB_ADDR[23:2]) sample_romb_req <= ~sample_romb_req;
 		ADPCMB_ADDR_LATCH <= ADPCMB_ADDR & (pcm_merged ? V1Mask : V2Mask);
 	end
@@ -461,6 +467,9 @@ assign ADPCMA_DATA_READY = sample_roma_req == sample_roma_ack;
 assign ADPCMB_DATA_READY = sample_romb_req == sample_romb_ack;
 
 always @(*) begin
+	if (!ADPCM_EN)
+		ADPCMA_DATA = 8'h80;
+	else
 	case (ADPCMA_ADDR_LATCH[1:0])
 	3'd0: ADPCMA_DATA = sample_roma_dout[ 7: 0];
 	3'd1: ADPCMA_DATA = sample_roma_dout[15: 8];
@@ -471,6 +480,9 @@ always @(*) begin
 end
 
 always @(*) begin
+	if (!ADPCM_EN)
+		ADPCMB_DATA = 8'h80;
+	else
 	case (ADPCMB_ADDR_LATCH[1:0])
 	3'd0: ADPCMB_DATA = sample_romb_dout[ 7: 0];
 	3'd1: ADPCMB_DATA = sample_romb_dout[15: 8];
@@ -513,7 +525,7 @@ sdram_2w_cl2 #(96) sdram
   .port1_q       (  ),
 
   // Main CPU
-  .cpu1_rom_addr ( SROM_RD ? { 5'b11111, P2ROM_ADDR[18:1] } : ROM_RD ? P2ROM_ADDR[19:1] : 23'h80000 + P2ROM_ADDR[23:1] ),
+  .cpu1_rom_addr ( SROM_RD ? { 5'b11111, P2ROM_ADDR[18:1] } : ROM_RD ? P2ROM_ADDR[19:1] : 23'h80000 + (P2ROM_ADDR[23:1] & P2Mask[23:1])),
   .cpu1_rom_cs   ( ROM_RD | PORT_RD | SROM_RD ),
   .cpu1_rom_q    ( PROM_DATA ),
   .cpu1_rom_valid( PROM_DATA_READY ),

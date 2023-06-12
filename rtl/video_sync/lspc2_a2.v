@@ -514,6 +514,7 @@ module lspc2_a2_sync(
 	always @(posedge CLK, negedge nRESETP)
 		if (!nRESETP) R74_nQ <= 1;
 		else if (LSPC_EN_1_5M_P) R74_nQ <= ~P74_Q;
+	wire R74_nQ_EN = ~R74_nQ & ~P74_Q & LSPC_EN_1_5M_P;
 	
 	// Reload pulse for the h-shrink shift registers
 	// Perdiodic as all sprites take the same time to render regardless of h-shrink value
@@ -532,8 +533,8 @@ module lspc2_a2_sync(
 	assign CHG = CHG_r;
 	
 	// SS1/2 outputs, periodic
-	//wire nFLIP, nCHG_D = ~CHG_D, R15_QD, S48_nQ = S48_nQ_s;
-	wire nFLIP, nCHG_D = ~CHG_D, R15_QD, S48_nQ;
+	wire nFLIP, nCHG_D = ~CHG_D, R15_QD;
+	reg S48_nQ;
 	
 	// Latch nFLIP at pixel 264 (O62_Q). That will make the line buffers switch at pixel 267.
 	// The first write of the new line to the line buffer happens at pixel 268.
@@ -544,9 +545,8 @@ module lspc2_a2_sync(
 	//FDPCell R63(PIXELC[2], FLIP_nQ, 1'b1, nRESETP, CHG_D, /*nCHG_D*/);
 	reg CHG_D;
 	always @(posedge CLK) if (LSPC_EN_6M_N && PIXELC[2:0] == 3'b011) CHG_D <= FLIP_nQ;
-	FDM S48(LSPC_3M, R15_QD, , S48_nQ);
-	//reg S48_nQ_s;
-	//always @(posedge CLK) if (LSPC_EN_3M) S48_nQ_s <= ~R15_QD;
+	//FDM S48(LSPC_3M, R15_QD, , S48_nQ);
+	always @(posedge CLK) if (LSPC_EN_3M) S48_nQ <= ~R15_QD;
 	// S40A
 	assign SS1 = ~|{S48_nQ, CHG_D};
 	// S39
@@ -701,8 +701,8 @@ module lspc2_a2_sync(
 					AA_DISABLE, TIMER_STOP, nVRAM_WRITE_REQ, D112B_OUT_DELAY);
 	
 	wire LSPC_6M, D46A_OUT;
-	lspc_timer TIMER(LSPC_6M, nRESETP, M68K_DATA, WR_TIMER_HIGH, WR_TIMER_LOW, VMODE, TIMER_MODE, TIMER_STOP,
-						RASTERC, TIMER_IRQ_EN, R74_nQ, BNKB, D46A_OUT);
+	lspc_timer_sync TIMER_SYNC(CLK, LSPC_6M, LSPC_EN_6M_N, LSPC_EN_6M_P, nRESETP, M68K_DATA, WR_TIMER_HIGH, WR_TIMER_LOW, VMODE, TIMER_MODE, TIMER_STOP,
+						RASTERC, TIMER_IRQ_EN, R74_nQ_EN, BNKB, D46A_OUT);
 	
 	resetp_sync RSTP_SYNC(CLK, CLK_EN_24M_N, RESET, nRESETP);
 	

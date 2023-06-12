@@ -82,72 +82,74 @@ void tick(int c) {
 	trace->dump(tickcount++);
 }
 
-/*
-void write_reg(int addr, int data)
+
+void write_reg(int addr, uint16_t data)
 {
 	// S0
-	while (!tb->MHZ8_EN1) {
+	while (!tb->CLK_EN_68K_P) {
 		tick(1);
 		tick(0);
 	};
 
 	// S1
-	while (!tb->MHZ8_EN2) {
+	while (!tb->CLK_EN_68K_N) {
 		tick(1);
 		tick(0);
 	};
-	tb->A = addr >> 1;
-	while (!tb->bus_free) {
+	tb->M68K_ADDR = addr >> 1;
+	//while (!tb->bus_free) {
 		tick(1);
 		tick(0);
-	}
-	tb->RW = 1;
+	//}
+	tb->M68K_RW = 1;
 
 	// S2
-	while (!tb->MHZ8_EN1) {
+	while (!tb->CLK_EN_68K_P) {
 		tick(1);
 		tick(0);
 	};
-	tb->AS_N = 0;
-	tb->RW = 0;
+	tb->nAS = 0;
+	tb->M68K_RW = 0;
 
 	// S3
-	while (!tb->MHZ8_EN2) {
+	while (!tb->CLK_EN_68K_N) {
 		tick(1);
 		tick(0);
 	};
-	tb->DIN = data;
+	printf("68k data: %04x\n", data);
+	tb->M68K_DATA = data;
+	printf("68k data: %04x\n", tb->M68K_DATA);
 
 	// S4
-	while (!tb->MHZ8_EN1) {
+	while (!tb->CLK_EN_68K_P) {
 		tick(1);
 		tick(0);
 	};
-	tb->UDS_N = 0;
-	tb->LDS_N = 0;
+	tb->nUDS = 0;
+	tb->nLDS = 0;
 
 	// S5
 	while (true) {
 		tick(1);
 		tick(0);
-		if (tb->MHZ8_EN2 && !(tb->DTACK_N && tb->BERR_N)) break;
+		if (tb->CLK_EN_68K_N/* && !(tb->DTACK_N && tb->BERR_N)*/) break;
 	}
 
 	// S6
-	while (!tb->MHZ8_EN1) {
+	while (!tb->CLK_EN_68K_P) {
 		tick(1);
 		tick(0);
 	}
 
 	// S7
-	while (!tb->MHZ8_EN2) {
+	while (!tb->CLK_EN_68K_N) {
 		tick(1);
 		tick(0);
 	}
-	tb->RW=1;
-	tb->AS_N=1;
-	tb->UDS_N=1;
-	tb->LDS_N=1;
+	tb->M68K_RW=1;
+	tb->nAS=1;
+	tb->nUDS=1;
+	tb->nLDS=1;
 	tick(1);
 	tick(0);
 }
@@ -155,34 +157,30 @@ void write_reg(int addr, int data)
 int read_reg(int addr)
 {
 	int dout;
-	while (!tb->bus_free) {
-		tick(1);
-		tick(0);
-	}
 	// S0
-	while (!tb->MHZ8_EN1) {
+	while (!tb->CLK_EN_68K_P) {
 		tick(1);
 		tick(0);
 	};
-	tb->RW = 1;
+	tb->M68K_RW = 1;
 
 	// S1
-	while (!tb->MHZ8_EN2) {
+	while (!tb->CLK_EN_68K_N) {
 		tick(1);
 		tick(0);
 	};
-	tb->A = addr >> 1;
+	tb->M68K_ADDR = addr >> 1;
 
 	// S2
-	while (!tb->MHZ8_EN1) {
+	while (!tb->CLK_EN_68K_P) {
 		tick(1);
 		tick(0);
 	};
-	tb->AS_N = 0;
-	tb->UDS_N = 0;
-	tb->LDS_N = 0;
+	tb->nAS = 0;
+	tb->nUDS = 0;
+	tb->nLDS = 0;
 	// S3
-	while (!tb->MHZ8_EN2) {
+	while (!tb->CLK_EN_68K_N) {
 		tick(1);
 		tick(0);
 	}
@@ -190,29 +188,28 @@ int read_reg(int addr)
 	while (true) {
 		tick(1);
 		tick(0);
-		if (tb->MHZ8_EN2 && !(tb->DTACK_N && tb->BERR_N)) break;
+		if (tb->CLK_EN_68K_N/* && !(tb->DTACK_N && tb->BERR_N)*/) break;
 	}
 
 	// S6
-	while (!tb->MHZ8_EN1) {
+	while (!tb->CLK_EN_68K_P) {
 		tick(1);
 		tick(0);
 	}
 
 	//S7
-	while (!tb->MHZ8_EN2) {
+	while (!tb->CLK_EN_68K_N) {
 		tick(1);
 		tick(0);
 	}
-	dout = tb->DOUT;
-	tb->AS_N=1;
-	tb->UDS_N=1;
-	tb->LDS_N=1;
+	dout = tb->M68K_DATA;
+	tb->nAS=1;
+	tb->nUDS=1;
+	tb->nLDS=1;
 	tick(1);
 	tick(0);
 	return dout;
 }
-*/
 
 int main(int argc, char **argv) {
 
@@ -233,6 +230,10 @@ int main(int argc, char **argv) {
 	tb->trace(trace, 99);
 	trace->open("lspc.vcd");
 
+	tb->nUDS = 1;
+	tb->nLDS = 1;
+	tb->M68K_RW = 1;
+
 	tick(0);
 	tb->nRESET = 0;
 	tick(1);
@@ -247,6 +248,11 @@ int main(int argc, char **argv) {
 	tick(1);
 	tick(0);
 	tb->nAS = 1;
+
+	write_reg(0x3c0006, 0x00f0); // REG_LSPCMODE
+	write_reg(0x3c0008, 0x0001); // REG_TIMERHIGH
+	write_reg(0x3c000A, 0x00fa); // REG_TIMERLOW
+
 	FILE *vidfile=fopen("video.rgb", "wb");
 	while(1) {
 		tick(1);
