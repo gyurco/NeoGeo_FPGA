@@ -248,24 +248,33 @@ wire [10:0] FIXMAP_ADDR;
 wire CWE, BWE, BOE;
 
 wire  [1:0] VRAM_CYCLE;
+wire        VRAM_SPRMAP_CYCLE = VRAM_CYCLE == 2'b10;
+wire        VRAM_FIXMAP_CYCLE = VRAM_CYCLE == 2'b00;
+wire        VRAM_CPU_CYCLE    = VRAM_CYCLE == 2'b01;
+assign      LO_ROM_RD = VRAM_FIXMAP_CYCLE; // lo rom address is ready here
+
+wire        SLOW_VRAM_WR;
 wire [14:0] SLOW_VRAM_ADDR;
 wire [15:0] SLOW_VRAM_DATA_OUT;
-wire [15:0] SLOW_FIX_VRAM_DATA_IN;
-wire [31:0] SLOW_VRAM_DATA_IN = VRAM_SPRMAP_CYCLE ? SPRMAP_DATA : (SCB1_CS & VRAM_CPU_CYCLE) ? SLOW_SCB1_VRAM_DATA_IN : SLOW_FIX_VRAM_DATA_IN;
-wire        SLOW_VRAM_WR;
-
-assign SLOW_SCB1_VRAM_WE =  SLOW_VRAM_WR && SCB1_CS && VRAM_CPU_CYCLE;
-assign SLOW_SCB1_VRAM_RD = ~SLOW_VRAM_WR && SCB1_CS && VRAM_CPU_CYCLE;
-assign SLOW_SCB1_VRAM_ADDR = CPU_VRAM_ADDR[15:0];
-assign SLOW_SCB1_VRAM_DATA_OUT = SLOW_VRAM_DATA_OUT;
-
-wire   VRAM_SPRMAP_CYCLE = VRAM_CYCLE == 2'b10;
-wire   VRAM_FIXMAP_CYCLE = VRAM_CYCLE == 2'b00;
-wire   VRAM_CPU_CYCLE    = VRAM_CYCLE == 2'b01;
-assign SPRMAP_RD = VRAM_SPRMAP_CYCLE | VRAM_FIXMAP_CYCLE; // the address is ready even in the fixmap read cycle
-assign LO_ROM_RD = VRAM_FIXMAP_CYCLE; // lo rom address is ready here
 wire [15:0] CPU_VRAM_ADDR;
+// use external RAM if VRAM32 is defined, otherwise use internal BRAM
+`ifdef VRAM32
+wire [15:0] SLOW_FIX_VRAM_DATA_IN;
 wire        SCB1_CS = CPU_VRAM_ADDR[15:12] < 4'd7;
+wire [31:0] SLOW_VRAM_DATA_IN = VRAM_SPRMAP_CYCLE ? SPRMAP_DATA : (SCB1_CS & VRAM_CPU_CYCLE) ? SLOW_SCB1_VRAM_DATA_IN : SLOW_FIX_VRAM_DATA_IN;
+assign      SLOW_SCB1_VRAM_WE =  SLOW_VRAM_WR && SCB1_CS && VRAM_CPU_CYCLE;
+assign      SLOW_SCB1_VRAM_RD = ~SLOW_VRAM_WR && SCB1_CS && VRAM_CPU_CYCLE;
+assign      SLOW_SCB1_VRAM_ADDR = CPU_VRAM_ADDR[15:0];
+assign      SLOW_SCB1_VRAM_DATA_OUT = SLOW_VRAM_DATA_OUT;
+assign      SPRMAP_RD = VRAM_SPRMAP_CYCLE | VRAM_FIXMAP_CYCLE; // the address is ready even in the fixmap read cycle
+`else
+wire [15:0] SLOW_VRAM_DATA_IN;
+assign      SLOW_SCB1_VRAM_RD = 0;
+assign      SLOW_SCB1_VRAM_WE = 0;
+assign      SPRMAP_RD = 0;
+assign      SLOW_SCB1_VRAM_DATA_OUT = 0;
+assign      SLOW_SCB1_VRAM_ADDR = 0;
+`endif
 
 wire [10:0] FAST_VRAM_ADDR;
 wire [15:0] FAST_VRAM_DATA_IN;
@@ -856,23 +865,25 @@ spram #(11,16) UFV(
 	.wren(~CWE),
 	.q(FAST_VRAM_DATA_IN)
 );
-/*
-spram #(15,16) USV(
-	.clock(CLK_24M),	//~CLK_24M,		// Is just CLK ok ?
-	.address(SLOW_VRAM_ADDR),
-	.data(SLOW_VRAM_DATA_OUT),
-	.wren(~BWE),
-	.q(SLOW_VRAM_DATA_IN)
-);
-*/
+
+`ifdef VRAM32
 // fixmap only
 spram #(12,16) USV(
-	.clock(CLK_48M),	//~CLK_24M,		// Is just CLK ok ?
+	.clock(CLK_48M),
 	.address(SLOW_VRAM_ADDR[11:0]),
 	.data(SLOW_VRAM_DATA_OUT),
 	.wren(~BWE & ~SCB1_CS),
 	.q(SLOW_FIX_VRAM_DATA_IN)
 );
+`else
+spram #(15,16) USV(
+	.clock(CLK_48M),
+	.address(SLOW_VRAM_ADDR),
+	.data(SLOW_VRAM_DATA_OUT),
+	.wren(~BWE),
+	.q(SLOW_VRAM_DATA_IN)
+);
+`endif
 
 wire [18:11] MA;
 wire [7:0] Z80_RAM_DATA;

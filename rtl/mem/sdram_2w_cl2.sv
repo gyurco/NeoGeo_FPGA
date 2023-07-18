@@ -113,6 +113,7 @@ module sdram_2w_cl2 (
 );
 
 parameter  MHZ = 16'd80; // 80 MHz default clock, set it to proper value to calculate refresh rate
+parameter  DUAL_BANK      = 1'b1;   // split the address space into two parts (bank 0-1-2 / 3)
 
 localparam RASCAS_DELAY   = 3'd2;   // tRCD=20ns -> 2 cycles@<100MHz
 localparam BURST_LENGTH   = 3'b001; // 000=1, 001=2, 010=4, 011=8
@@ -394,7 +395,6 @@ always @(posedge clk) begin
 		// bank 2,3
 		if(t == STATE_RAS1) begin
 			if (|refresh) refresh <= refresh - 1'd1;
-			refresh <= 1'b0;
 			addr_latch[1] <= addr_next[1];
 			{ oe_latch[1], we_latch[1] } <= { oe_next[1], we_next[1] };
 			port[1] <= next_port[1];
@@ -405,7 +405,9 @@ always @(posedge clk) begin
 				sd_cmd <= CMD_ACTIVE;
 				SDRAM_A <= addr_next[1][22:10];
 				// 6*8MiB -> Banks 0,1,2,2,0,1
-				SDRAM_BA <= addr_next[1][24:23] == 2'b11 ? 2'b10 : addr_next[1][24:23];
+				SDRAM_BA <= DUAL_BANK ?
+					(addr_next[1][24:23] == 2'b11 ? 2'b10 : addr_next[1][24:23]) :
+					addr_next[1][24:23];
 			end
 			case (next_port[1])
 				PORT_REQ: port2_state <= port2_req;
@@ -461,8 +463,13 @@ always @(posedge clk) begin
 					default: ;
 				endcase;
 			end
-			SDRAM_A <= { 3'b001, addr_latch[1][25:23] > 3'd2, addr_latch[1][9:1] };  // auto precharge
-			SDRAM_BA <= addr_latch[1][24:23] == 2'b11 ? 2'b10 : addr_latch[1][24:23];
+			if (DUAL_BANK) begin
+				SDRAM_A <= { 3'b001, addr_latch[1][25:23] > 3'd2, addr_latch[1][9:1] };  // auto precharge
+				SDRAM_BA <= addr_latch[1][24:23] == 2'b11 ? 2'b10 : addr_latch[1][24:23];
+			end else begin
+				SDRAM_A <= { 3'b001, addr_latch[1][25], addr_latch[1][9:1] };  // auto precharge
+				SDRAM_BA <= addr_latch[1][24:23];
+			end
 		end
 
 		if(t == STATE_DS0b && oe_latch[0]) { SDRAM_DQMH, SDRAM_DQML } <= 0;
