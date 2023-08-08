@@ -60,7 +60,7 @@ module ddram
 	output reg[63:0] cpdout,
 	output reg       cpwr,
 	input            cpreq,
-	output           cpbusy
+	output reg       cpbusy
 );
 
 assign DDRAM_BURSTCNT = ram_burst;

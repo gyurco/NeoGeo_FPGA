@@ -37,7 +37,9 @@ module irq_sync(
 	assign ACK[1] = ~&{nWR_ACK, ACK_BITS[1]};
 	assign ACK[2] = ~&{nWR_ACK, ACK_BITS[2]};
 	
-	wire B56_Q, B56_nQ = ~B56_Q, B52_Q, B52_nQ = ~B52_Q, C52_Q;
+	wire B56_Q, B52_Q, C52_Q;
+	wire B56_nQ = ~B56_Q;
+	wire B52_nQ = ~B52_Q;
 	//FD3 B56(RESET_IRQ, 1'b0, ACK[0], B56_Q, B56_nQ);
 	//FD3 B52(TIMER_IRQ, 1'b0, ACK[1], B52_Q, B52_nQ);
 	//FD3 C52(VBL_IRQ, 1'b0, ACK[2], C52_Q);

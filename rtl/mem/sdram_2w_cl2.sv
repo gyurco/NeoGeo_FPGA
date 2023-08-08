@@ -134,7 +134,7 @@ localparam RFRSH_CYCLES = 16'd78*MHZ/4'd10;
  SDRAM state machine for 2 bank interleaved access
  2 word burst, CL2
 cmd issued  registered
- 0 RAS0     data1 retruned
+ 0 RAS0     data1 returned
  1          ras0 - data1 returned
  2 CAS0
  3 RAS1

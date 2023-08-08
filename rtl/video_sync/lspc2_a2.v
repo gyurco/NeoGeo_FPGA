@@ -192,7 +192,8 @@ module lspc2_a2_sync(
 	wire U72_OUT = ONE_PIXEL ^ nEVEN_ODD;
 	wire U57B_OUT = nPARITY_INIT & U72_OUT;
 	wire U56A_OUT = ~|{S58A_OUT, U57B_OUT};
-	wire CLK_24MB, LSPC_12M, U68A_nQ = ~CK_HSHRINK_REG;
+	wire CLK_24MB, LSPC_12M;
+	wire U68A_nQ = ~CK_HSHRINK_REG;
 	reg  CK_HSHRINK_REG, EVEN_nODD, nEVEN_ODD;
 //	FD2 U68A(CLK_24MB, ~LSPC_12M, CK_HSHRINK_REG, /*U68A_nQ*/);
 //	FD2 U74A(~U68A_nQ, U56A_OUT, EVEN_nODD, nEVEN_ODD);
@@ -531,7 +532,8 @@ module lspc2_a2_sync(
 	assign CHG = CHG_r;
 	
 	// SS1/2 outputs, periodic
-	wire nFLIP, nCHG_D = ~CHG_D, R15_QD;
+	wire nFLIP, R15_QD;
+	wire nCHG_D = ~CHG_D;
 	reg S48_nQ;
 	
 	// Latch nFLIP at pixel 264 (O62_Q). That will make the line buffers switch at pixel 267.
