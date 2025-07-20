@@ -163,16 +163,17 @@ localparam CONF_STR = {
 	"OJ,CD Lid,Closed,Opened;",
 `endif
 	`SEP
-`ifdef CARTOPTS
 	"P1,Cart options;",
+`ifdef CARTOPTS
 	"P1OMO,Protection,Off,NEO-ZMC2,NEO-PVC,KOF99,GAROU,GAROUH,MSLUG3,KOF2000;",
 	"P1OP,PRO-CT0,Off,On;",
-	"P1OQ,Link-MCU,Off,On;",
 	"P1ORS,NEO-CMC,Off,Type-1,Type-2;",
 	"P1OT,ROMWait,Full speed,1 cycle;",
 	"P1OUV,PWait,Full speed,1 cycle,2 cycles;",
-	`SEP
 `endif
+	"P1OQ,Link-MCU,Off,On;",
+	"P1OW,Extra RAM,Off,On;",
+	`SEP
 	"O3,Video Mode,NTSC,PAL;",
 	"O45,Scanlines,Off,25%,50%,75%;",
 	"O7,Blending,Off,On;",
@@ -207,11 +208,14 @@ wire        cd_lid = ~status[19];
 `ifdef CARTOPTS
 wire  [2:0] pchip = status[24:22];
 wire        proct0 = status[25];
-wire        linkmcu = status[26];
 wire  [1:0] cmcchip = status[28:27];
 wire        romwait = status[29];
 wire  [1:0] pwait = status[31:30];
+`else
+wire        proct0 = 0;
 `endif
+wire        linkmcu = status[26];
+wire        xram = status[32];
 
 wire        fix_en = ~status[14];
 wire        spr_en = ~status[15];
@@ -272,7 +276,7 @@ pll_mist pll(
 
 `endif
 
-wire [31:0] status;
+wire [63:0] status;
 wire  [1:0] buttons;
 wire  [1:0] switches;
 wire [15:0] joystick_0;
@@ -478,6 +482,8 @@ wire        WRAM_WE;
 wire        WRAM_RD;
 wire        SRAM_WE;
 wire        SRAM_RD;
+wire        XRAM_WE;
+wire        XRAM_RD;
 wire        CD_EXT_RD;
 wire        CD_EXT_WR;
 wire        CD_FIX_RD;
@@ -904,6 +910,7 @@ end
 
 // Bank 3 address map
 // xxxx xxxx xxxx xxxx xxxx xxxx    P1/2 ROMs
+// 1101 1000 xxxx xxxx xxxx xxxx    XRAM
 // 1101 1100 xxxx xxxx xxxx xxxx    VRAM
 // 1101 111x xxxx xxxx xxxx xxxx    LO ROM
 // 1110 0xxx xxxx xxxx xxxx xxxx    FIX ROM
@@ -921,10 +928,11 @@ always @(*) begin
 	else if (CD_FIX_RD | CD_FIX_WR)          ROM_ADDR = { 6'b111000, P2ROM_ADDR[17:0] };
 	else if (WRAM_WE | WRAM_RD)              ROM_ADDR = { 8'b11101011, P2ROM_ADDR[15:0] };
 	else if (SRAM_WE | SRAM_RD)              ROM_ADDR = { 8'b11101010, P2ROM_ADDR[15:0] };
+	else if (XRAM_WE | XRAM_RD)              ROM_ADDR = { 8'b11011000, P2ROM_ADDR[15:0] };
 	else                                     ROM_ADDR = 24'h100000 + (P2ROM_ADDR[23:0] & P2Mask[23:0]);
 end
 
-wire  [1:0] ROM_WR_DS = {2{(CD_EXT_WR | CD_FIX_WR | SRAM_WE | WRAM_WE)}} & PROM_DS;
+wire  [1:0] ROM_WR_DS = {2{(CD_EXT_WR | CD_FIX_WR | SRAM_WE | WRAM_WE | XRAM_WE)}} & PROM_DS;
 wire [15:0] P2ROM_Q;
 wire        P2ROM_DATA_READY;
 assign PROM_DATA = (CD_SPR_RD | CD_PCM_RD) ? port2_q : P2ROM_Q;
@@ -949,7 +957,7 @@ sdram_2w_cl2 #(96) sdram
 
   // Main CPU
   .cpu1_rom_addr ( ROM_ADDR[23:1] ),
-  .cpu1_rom_cs   ( CD_EXT_RD | CD_EXT_WR | CD_FIX_RD | CD_FIX_WR | ROM_RD | PORT_RD | SROM_RD | WRAM_RD | SRAM_RD | WRAM_WE | SRAM_WE ),
+  .cpu1_rom_cs   ( CD_EXT_RD | CD_EXT_WR | CD_FIX_RD | CD_FIX_WR | ROM_RD | PORT_RD | SROM_RD | WRAM_RD | SRAM_RD | XRAM_RD | WRAM_WE | SRAM_WE | XRAM_WE ),
   .cpu1_rom_ds   ( ROM_WR_DS ), // for write, 00 for read
   .cpu1_rom_d    ( PROM_DOUT ),
   .cpu1_rom_q    ( P2ROM_Q ),
@@ -1092,6 +1100,7 @@ neogeo_top neogeo_top (
 	.P1_IN         ( P1_IN ),
 	.P2_IN         ( P2_IN ),
 	.DIPSW         ( dipsw ),
+	.OPMENU        ( m_one_player ), // VLiner
 	.MS_XY         ( ms_xy ),
 	.DBG_FIX_EN    ( fix_en ),
 	.DBG_SPR_EN    ( spr_en ),
@@ -1129,11 +1138,12 @@ neogeo_top neogeo_top (
 
 `ifdef CARTOPTS
 	.CART_PCHIP    ( pchip ),
-	.CART_CHIP     ( {linkmcu, proct0} ), // legacy option: 0 - none, 1 - PRO-CT0, 2 - Link MCU
 	.CMC_CHIP      ( cmcchip ),           // type 1/2
 	.ROM_WAIT      ( romwait ),           // ROMWAIT from cart. 0 - Full speed, 1 - 1 wait cycle
-	.P_WAIT        ( pwait ),             // PWAIT from cart. 0 - Full speed, 1 - 1 wait cycle, 2 - 2 cycles	
+	.P_WAIT        ( pwait ),             // PWAIT from cart. 0 - Full speed, 1 - 1 wait cycle, 2 - 2 cycles
 `endif
+	.CART_CHIP     ( {linkmcu, proct0} ), // legacy option: 0 - none, 1 - PRO-CT0, 2 - Link MCU
+	.XRAM          ( xram  ),
 
 	.CLK_MEMCARD   ( CLK_48M      ),
 	.MEMCARD_ADDR  ( MEMCARD_ADDR ),
@@ -1153,6 +1163,8 @@ neogeo_top neogeo_top (
 	.WRAM_RD             ( WRAM_RD ),
 	.SRAM_WE             ( SRAM_WE ),
 	.SRAM_RD             ( SRAM_RD ),
+	.XRAM_WE             ( XRAM_WE ),
+	.XRAM_RD             ( XRAM_RD ),
 	.CD_EXT_RD           ( CD_EXT_RD ),
 	.CD_EXT_WR           ( CD_EXT_WR ),
 	.CD_FIX_RD           ( CD_FIX_RD ),

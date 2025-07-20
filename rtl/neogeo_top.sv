@@ -33,6 +33,7 @@ module neogeo_top
 	input         COIN2,
 	input   [9:0] P1_IN,
 	input   [9:0] P2_IN,
+	input         OPMENU,
 	output reg    MS_XY,
 	input         DBG_FIX_EN,
 	input         DBG_SPR_EN,
@@ -57,7 +58,8 @@ module neogeo_top
 	input   [1:0] CART_CHIP,     // legacy option: 0 - none, 1 - PRO-CT0, 2 - Link MCU
 	input   [1:0] CMC_CHIP,      // type 1/2
 	input         ROM_WAIT,      // ROMWAIT from cart. 0 - Full speed, 1 - 1 wait cycle
-	input   [1:0] P_WAIT,        // PWAIT from cart. 0 - Full speed, 1 - 1 wait cycle, 2 - 2 cycles	
+	input   [1:0] P_WAIT,        // PWAIT from cart. 0 - Full speed, 1 - 1 wait cycle, 2 - 2 cycles
+	input         XRAM,          // Extra RAM for Jockey GP and VLiner
 
 	// memcard save-load
 	input         CLK_MEMCARD,
@@ -112,6 +114,8 @@ module neogeo_top
 	output        WRAM_RD,
 	output        SRAM_WE,
 	output        SRAM_RD,
+	output        XRAM_WE,
+	output        XRAM_RD,
 	output        CD_EXT_RD, // CD $000000~$1FFFFF
 	output        CD_EXT_WR,
 	output        CD_FIX_RD,
@@ -464,7 +468,7 @@ wire [1:0] IPL_OUT = ~SYSTEM_CDx ? { IPL1,IPL0 } : CD_IPL;
 
 // Because of the SDRAM latency, nDTACK is handled differently for ROM zones
 // If the address is in a ROM zone, PROM_DATA_READY is used to extend the normal nDTACK output by NEO-C1
-wire nDTACK_ADJ = ~&{nSROMOE, nROMOE, nPORTOE, ~WRAM_RD, ~WRAM_WE, ~SRAM_RD, ~SRAM_WE, ~CD_EXT_RD, ~CD_EXT_WR, ~CD_TR_RD_FIX, ~CD_TR_WR_FIX, ~CD_TR_RD_SPR, ~CD_TR_WR_SPR, ~CD_TR_RD_PCM, ~CD_TR_WR_PCM} ? ~PROM_DATA_READY | nDTACK :
+wire nDTACK_ADJ = ~&{nSROMOE, nROMOE, nPORTOE, ~WRAM_RD, ~WRAM_WE, ~SRAM_RD, ~SRAM_WE, ~XRAM_WE, ~XRAM_RD, ~CD_EXT_RD, ~CD_EXT_WR, ~CD_TR_RD_FIX, ~CD_TR_WR_FIX, ~CD_TR_RD_SPR, ~CD_TR_WR_SPR, ~CD_TR_RD_PCM, ~CD_TR_WR_PCM} ? ~PROM_DATA_READY | nDTACK :
                   (CD_TR_RD_Z80 | CD_TR_WR_Z80) ? ~nZ80WAIT | nDTACK : nDTACK;
 
 cpu_68k M68KCPU(
@@ -495,7 +499,7 @@ always @(posedge CLK_48M)
 assign FIXD = CD_USE_FIX ? 8'bzzzz_zzzz : S2H1 ? SROM_DATA[15:8] : SROM_DATA[7:0];
 
 // Disable ROM read in PORT zone if the game uses a special chip
-assign M68K_DATA = ((nROMOE & nSROMOE & |{nPORTOE, CART_CHIP, CART_PCHIP}) | CD_TR_RD_FIX | CD_TR_RD_PCM) ? 16'bzzzzzzzzzzzzzzzz : PROM_DATA;
+assign M68K_DATA = ((nROMOE & nSROMOE & |{nPORTOE, CART_CHIP, CART_PCHIP, XRAM & ~XRAM_CS}) | CD_TR_RD_FIX | CD_TR_RD_PCM) ? 16'bzzzzzzzzzzzzzzzz : PROM_DATA;
 
 assign M68K_DATA = CD_TR_RD_SPR ? PROM_DATA : 16'hzzzz;
 // Output correct FIX byte
@@ -541,15 +545,20 @@ dpram #(15) WRAMU(
 	.wren_b(~nRESET)
 );
 */
+wire XRAM_CS = ~nPORTADRS && !M68K_ADDR[19:13] && XRAM;
+assign XRAM_RD = XRAM_CS & nPORTWEL & nPORTWEU & M68K_RW & ~nAS;
+assign XRAM_WE = XRAM_CS & (~nPORTWEL | ~nPORTWEU);
+assign M68K_DATA[7:0] = (~nPORTOEL && M68K_ADDR[19] && !M68K_ADDR[18:1] && XRAM) ? ~{P1_IN[9],1'b0,P1_IN[8],OPMENU,2'b00, COIN2, COIN1} : 8'bZ;
+
 wire [23:0] ADDR_MUX = DMA_RUNNING ? (({24{DMA_WR_OUT}} & DMA_ADDR_OUT) | ({24{DMA_RD_OUT}} & DMA_ADDR_IN)) : {3'd0, M68K_ADDR[20:1], 1'b0};
 
-assign P2ROM_ADDR = ({24{(CD_EXT_RD | CD_EXT_WR | SRAM_RD | SRAM_WE | WRAM_RD | WRAM_WE)}} & ADDR_MUX) |
+assign P2ROM_ADDR = ({24{(CD_EXT_RD | CD_EXT_WR | SRAM_RD | SRAM_WE | WRAM_RD | WRAM_WE | XRAM_RD | XRAM_WE)}} & ADDR_MUX) |
                     ({24{(CD_TR_RD_FIX | CD_TR_WR_FIX)}} & {ADDR_MUX[17:6], ADDR_MUX[3:1], ~ADDR_MUX[5], ADDR_MUX[4]}) |
                     ({24{(CD_TR_RD_SPR | CD_TR_WR_SPR)}} & {CD_BANK_SPR, ADDR_MUX[19:7], ADDR_MUX[5:2], ~ADDR_MUX[6], ADDR_MUX[1:0]}) |
                     ({24{(CD_TR_RD_PCM | CD_TR_WR_PCM)}} & {CD_BANK_PCM, ADDR_MUX[19:1]}) |
                     ({24{(!(nROMOE & nSROMOE))}} & {ADDR_MUX[19:1], 1'b0}) |
-                    ({24{(~|CART_PCHIP & !nPORTOE)}} & {P_BANK, ADDR_MUX[19:1], 1'b0}) |
-                    ({24{!nPORTOE}} & (NEO_PVC_P2ROM_ADDR | NEO_SMA_P2ROM_ADDR));
+                    ({24{!nPORTOE & ~|CART_PCHIP & !XRAM_CS}} & {P_BANK, ADDR_MUX[19:1], 1'b0}) |
+                    ({24{!nPORTOE & !XRAM_CS}} & (NEO_PVC_P2ROM_ADDR | NEO_SMA_P2ROM_ADDR));
 
 wire [15:0] CD_TR_DOUT = DMA_RUNNING ? DMA_DATA_OUT : M68K_DATA;
 assign PROM_DOUT = (CD_TR_WR_FIX | CD_TR_WR_PCM) ? {CD_TR_DOUT[7:0], CD_TR_DOUT[7:0]} : CD_TR_DOUT;
@@ -774,7 +783,7 @@ neo_f0 F0(
 	.nDIPRD0(nDIPRD0), .nDIPRD1(nDIPRD1),
 	.nBITW0(nBITW0), .nBITWD0(nBITWD0),
 	.DIPSW({~DIPSW[2:1], 5'b11111, ~DIPSW[0]}),
-	.COIN1(~COIN1), .COIN2(~COIN2),
+	.COIN1(~COIN1 | XRAM), .COIN2(~COIN2 | XRAM),
 	.M68K_ADDR(M68K_ADDR[7:4]),
 	.M68K_DATA(M68K_DATA[7:0]),
 	.SYSTEMB(~nSYSTEM_G),
