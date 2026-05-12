@@ -160,6 +160,6 @@ module lspc_regs_sync(
 	//FDPCell D34(WR_TIMER_STOP, M68K_DATA[0], RESETP, 1'b1, , TIMER_STOP);
 	wire nTIMER_STOP;
 	assign TIMER_STOP = ~nTIMER_STOP;
-	register D34(CLK, 1'b0, ~RESETP, WR_TIMER_STOP, M68K_DATA[0], nTIMER_STOP);
+	register D34(CLK, ~RESETP, 1'b0, WR_TIMER_STOP, M68K_DATA[0], nTIMER_STOP);
 
 endmodule
